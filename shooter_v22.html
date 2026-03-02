@@ -1,0 +1,277 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>CYBERSHOT - GESTURE SHOOTING</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://unpkg.com/three@0.160.0/build/three.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands@0.4.1646424915/hands.js" crossorigin="anonymous"></script>
+    <style>
+        body { margin: 0; background: #000; overflow: hidden; color: #0ff; font-family: 'Courier New', monospace; }
+        #v-container { position: fixed; inset: 0; z-index: 0; transform: scaleX(-1); }
+        video { width: 100%; height: 100%; object-fit: cover; opacity: 0.5; }
+        canvas { position: fixed; inset: 0; z-index: 10; pointer-events: none; }
+        .hud { position: fixed; inset: 0; z-index: 20; pointer-events: none; padding: 2rem; }
+        .panel { background: rgba(0,20,40,0.9); border: 2px solid #0ff; padding: 1rem; box-shadow: 0 0 20px #0ff5; }
+        #auth-screen { position: fixed; inset: 0; z-index: 100; background: #000; display: flex; align-items: center; justify-content: center; }
+        .glow-btn { border: 3px solid #0ff; padding: 2rem 5rem; cursor: pointer; pointer-events: auto; font-weight: 900; font-size: 1.5rem; text-transform: uppercase; letter-spacing: 0.2em; box-shadow: 0 0 30px #0ff; }
+        .glow-btn:hover { background: #0ff; color: #000; }
+        .float-text {
+            position: fixed;
+            pointer-events: none;
+            font-weight: 900;
+            font-size: 2rem;
+            text-shadow: 0 0 10px currentColor;
+            z-index: 50;
+            animation: floatUp 0.8s ease-out forwards;
+        }
+        @keyframes floatUp {
+            0% { transform: translateY(0); opacity: 1; }
+            100% { transform: translateY(-50px); opacity: 0; }
+        }
+    </style>
+</head>
+<body>
+
+<div id="auth-screen">
+    <div class="text-center">
+        <h1 class="text-6xl font-black mb-2 tracking-tighter text-transparent bg-clip-text bg-gradient-to-r from-cyan-400 to-purple-500 neon-text">CYBER_SHOT</h1>
+		<h2 class="text-2xl mb-4">MAKE A <span class="text-cyan-400 font-bold">PISTOL GESTURE 🔫</span></h2>
+		<h2 class="text-2xl mb-6">GIƠ TAY HÌNH <span class="text-yellow-400">KHẨU SÚNG 🔫</span> ĐỂ BẮT ĐẦU</h2>
+		<div id="btn-start" class="glow-btn">CLICK HERE TO START</div>
+    </div>
+</div>
+
+<div id="v-container"><video id="webcam" autoplay playsinline></video></div>
+
+<div class="hud flex flex-col justify-between">
+    <div class="flex justify-between items-start">
+        <div class="panel">
+            <div class="text-[30px] uppercase text-cyan-500">Score</div>
+            <div id="score" class="text-5xl font-black italic text-cyan-400">0000</div>
+        </div>
+        <div id="status" class="panel text-xs font-bold tracking-widest text-cyan-400">SYNCED</div>
+    </div>
+    <div class="text-center text-[15px] tracking-[1em] opacity-30">NGUYỄN ĐÌNH ANH HOÀNG - ICT Teacher</div>
+</div>
+
+<script>
+const SFX = {
+    ctx: null,
+    init() { this.ctx = new (window.AudioContext || window.webkitAudioContext)(); },
+    play(freq, type='sawtooth', dur=0.2) {
+        if(!this.ctx) return;
+        const o = this.ctx.createOscillator();
+        const g = this.ctx.createGain();
+        o.type = type; o.frequency.setValueAtTime(freq, this.ctx.currentTime);
+        o.frequency.exponentialRampToValueAtTime(10, this.ctx.currentTime + dur);
+        g.gain.setValueAtTime(0.1, this.ctx.currentTime);
+        g.gain.linearRampToValueAtTime(0, this.ctx.currentTime + dur);
+        o.connect(g); g.connect(this.ctx.destination);
+        o.start(); o.stop(this.ctx.currentTime + dur);
+    }
+};
+
+const scene = new THREE.Scene();
+const camera = new THREE.PerspectiveCamera(75, window.innerWidth/window.innerHeight, 0.1, 1000);
+const renderer = new THREE.WebGLRenderer({ alpha: true, antialias: true });
+renderer.setSize(window.innerWidth, window.innerHeight);
+document.body.appendChild(renderer.domElement);
+camera.position.z = 5;
+
+const crosshair = new THREE.Group();
+crosshair.add(new THREE.Mesh(new THREE.RingGeometry(0.15, 0.18, 32), new THREE.MeshBasicMaterial({color: 0x00ffff})));
+crosshair.add(new THREE.Mesh(new THREE.CircleGeometry(0.02, 16), new THREE.MeshBasicMaterial({color: 0x00ffff})));
+scene.add(crosshair);
+
+const laser = new THREE.Line(
+    new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(0,0,0), new THREE.Vector3(0,0,-10)]),
+    new THREE.LineBasicMaterial({color: 0xff00ff, transparent: true, opacity: 0.5})
+);
+scene.add(laser);
+
+const targets = [];
+const raycaster = new THREE.Raycaster();
+
+function spawnTarget(isBird = false) {
+    let geo, col;
+    if (isBird) {
+        geo = new THREE.ConeGeometry(0.2, 0.8, 3);
+        col = 0xff2200;
+    } else {
+        // --- MODIFIED: Slightly larger geometry sizes ---
+        const geometries = [
+            new THREE.IcosahedronGeometry(0.6, 0),
+            new THREE.TorusKnotGeometry(0.4, 0.12, 64, 8),
+            new THREE.OctahedronGeometry(0.6, 0),
+            new THREE.TetrahedronGeometry(0.7, 0)
+        ];
+        const colors = [0x00ffff, 0xff00ff, 0xffff00, 0x00ff00];
+        const typeIndex = Math.floor(Math.random() * geometries.length);
+        geo = geometries[typeIndex];
+        col = colors[typeIndex];
+    }
+    
+    const mat = new THREE.MeshStandardMaterial({ color: col, emissive: col, wireframe: true });
+    const mesh = new THREE.Mesh(geo, mat);
+    
+    const side = Math.floor(Math.random() * 4);
+    let x, y;
+    if(side === 0) { x = -7; y = (Math.random()-0.5)*10; }
+    if(side === 1) { x = 7; y = (Math.random()-0.5)*10; }
+    if(side === 2) { x = (Math.random()-0.5)*14; y = 6; }
+    if(side === 3) { x = (Math.random()-0.5)*14; y = -6; }
+
+    mesh.position.set(x, y, -5);
+    
+    // --- MODIFIED: Slower movement speed (0.003 instead of 0.005) ---
+    const driftX = (-x * 0.003) + (Math.random()-0.5)*0.01;
+    const driftY = (-y * 0.003) + (Math.random()-0.5)*0.01;
+    
+    targets.push({
+        mesh, 
+        vel: new THREE.Vector3(driftX, driftY, 0), 
+        rot: (Math.random() * 0.03) + 0.01, 
+        isBird: isBird,
+        flapPhase: Math.random() * Math.PI * 2
+    });
+    scene.add(mesh);
+}
+
+for(let i=0; i<5; i++) spawnTarget(false);
+for(let i=0; i<5; i++) spawnTarget(true);
+
+const video = document.getElementById('webcam');
+const hands = new Hands({ locateFile: (f) => `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${f}` });
+hands.setOptions({ maxNumHands: 1, modelComplexity: 1, minDetectionConfidence: 0.75 });
+
+let score = 0;
+let ndcPos = new THREE.Vector2();
+let wasPinching = false; 
+
+function createFloatingText(x, y, text, color) {
+    const el = document.createElement('div');
+    el.className = 'float-text';
+    el.innerText = text;
+    el.style.color = color;
+    el.style.left = `${(x + 1) / 2 * window.innerWidth}px`;
+    el.style.top = `${(1 - y) / 2 * window.innerHeight}px`;
+    document.body.appendChild(el);
+    setTimeout(() => el.remove(), 800);
+}
+
+hands.onResults((res) => {
+    const statusEl = document.getElementById('status');
+    if (res.multiHandLandmarks && res.multiHandLandmarks[0]) {
+        statusEl.innerText = "READY";
+        const h = res.multiHandLandmarks[0];
+        const sX = (1 - h[8].x - 0.5) * 2;
+        const sY = -(h[8].y - 0.5) * 2;
+        ndcPos.set(sX, sY);
+
+        crosshair.position.lerp(new THREE.Vector3(sX * 7, sY * 5, -1), 0.2);
+        laser.position.set(sX * 7, sY * 5, -1);
+
+        const dist = Math.hypot(h[4].x - h[8].x, h[4].y - h[8].y);
+        const isCurrentlyPinching = dist < 0.1;
+        if (isCurrentlyPinching && !wasPinching) executeShot();
+        wasPinching = isCurrentlyPinching;
+    } else {
+        statusEl.innerText = "AWAITING PILOT";
+        wasPinching = false;
+    }
+});
+
+function executeShot() {
+    SFX.play(1200, 'square', 0.05); 
+    
+    // --- MODIFIED: Raycaster precision is boosted ---
+    raycaster.setFromCamera(ndcPos, camera);
+    raycaster.params.Line.threshold = 0.5; // Makes line-based hits easier
+    raycaster.params.Points.threshold = 0.5;
+
+    let hitTarget = null;
+    const intersects = raycaster.intersectObjects(targets.map(t => t.mesh));
+
+    if (intersects.length > 0) {
+        hitTarget = targets.find(t => t.mesh === intersects[0].object);
+    } else {
+        // --- NEW: Proximity Check (Magnetic Aim) ---
+        // If raycaster misses, check if hand is very close to target center
+        for (const t of targets) {
+            const screenPos = t.mesh.position.clone().project(camera);
+            const dist = ndcPos.distanceTo(new THREE.Vector2(screenPos.x, screenPos.y));
+            if (dist < 0.15) { // 0.15 is the "generous" radius
+                hitTarget = t;
+                break;
+            }
+        }
+    }
+
+    if (hitTarget) {
+        const targetData = hitTarget;
+        if(targetData.isBird) {
+            SFX.play(80, 'sawtooth', 0.5);
+            score -= 200;
+            createFloatingText(ndcPos.x, ndcPos.y, "-200", "#ff2200");
+        } else {
+            SFX.play(400, 'sine', 0.2); 
+            score += 100;
+            createFloatingText(ndcPos.x, ndcPos.y, "+100", "#00ffff");
+        }
+        
+        document.getElementById('score').innerText = score.toString().padStart(4, '0');
+        scene.remove(targetData.mesh);
+        targets.splice(targets.indexOf(targetData), 1);
+    }
+}
+
+async function start() {
+    try {
+        const stream = await navigator.mediaDevices.getUserMedia({ video: { width: 1280, height: 720 } });
+        video.srcObject = stream;
+        const process = async () => {
+            await hands.send({ image: video });
+            requestAnimationFrame(process);
+        };
+        process();
+    } catch (e) { alert("Camera access required."); }
+}
+
+document.getElementById('btn-start').onclick = () => {
+    SFX.init();
+    document.getElementById('auth-screen').style.display = 'none';
+    start();
+};
+
+function animate() {
+    requestAnimationFrame(animate);
+    const birdCount = targets.filter(t => t.isBird).length;
+    const shapeCount = targets.length - birdCount;
+    if(shapeCount < 5) spawnTarget(false);
+    if(birdCount < 5) spawnTarget(true);
+
+    const time = Date.now() * 0.008;
+    for (let i = targets.length - 1; i >= 0; i--) {
+        const t = targets[i];
+        t.mesh.position.add(t.vel);
+        if (t.isBird) {
+            const flap = Math.sin(time + t.flapPhase * 5);
+            t.mesh.scale.set(1.5 + flap, 1, 0.5);
+            t.mesh.rotation.z = Math.PI / 2 + (flap * 0.3); 
+            t.mesh.rotation.x += 0.05; 
+        } else {
+            t.mesh.rotation.y += t.rot;
+            t.mesh.rotation.x += t.rot * 0.5;
+        }
+        if (Math.abs(t.mesh.position.x) > 12 || Math.abs(t.mesh.position.y) > 9) {
+            scene.remove(t.mesh);
+            targets.splice(i, 1);
+        }
+    }
+    renderer.render(scene, camera);
+}
+animate();
+</script>
+</body>
+</html>
