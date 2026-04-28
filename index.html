@@ -271,7 +271,7 @@ function executeShot() {
         for (const t of targets) {
             const screenPos = t.mesh.position.clone().project(camera);
             const dist = ndcPos.distanceTo(new THREE.Vector2(screenPos.x, screenPos.y));
-            if (dist < 0.15) { hitTarget = t; break; }
+            if (dist < 0.35) { hitTarget = t; break; }
         }
     }
 
