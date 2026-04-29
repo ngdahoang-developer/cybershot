@@ -2,17 +2,17 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <title>GESTURE SHOOTING v.27</title>
+    <title>GESTURE SHOOTING v.27 - SPACE EDITION</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://unpkg.com/three@0.160.0/build/three.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands@0.4.1646424915/hands.js" crossorigin="anonymous"></script>
     <style>
         body { margin: 0; background: #000; overflow: hidden; color: #0ff; font-family: 'Courier New', monospace; }
         #v-container { position: fixed; inset: 0; z-index: 0; transform: scaleX(-1); }
-        video { width: 100%; height: 100%; object-fit: cover; opacity: 0.5; }
+        video { width: 100%; height: 100%; object-fit: cover; opacity: 0.4; }
         canvas { position: fixed; inset: 0; z-index: 10; pointer-events: none; }
         .hud { position: fixed; inset: 0; z-index: 20; pointer-events: none; padding: 2rem; }
-        .panel { background: rgba(0,20,40,0.9); border: 2px solid #0ff; padding: 1rem; box-shadow: 0 0 20px #0ff5; }
+        .panel { background: rgba(0,20,40,0.8); border: 2px solid #0ff; padding: 1rem; box-shadow: 0 0 20px #0ff5; }
         #auth-screen, #end-screen { position: fixed; inset: 0; z-index: 100; background: rgba(0,0,0,0.9); display: flex; align-items: center; justify-content: center; flex-direction: column; }
         #end-screen { display: none; z-index: 101; }
         .glow-btn { border: 3px solid #0ff; padding: 1.5rem 3rem; cursor: pointer; pointer-events: auto; font-weight: 900; font-size: 1.5rem; text-transform: uppercase; letter-spacing: 0.2em; box-shadow: 0 0 30px #0ff; margin-top: 20px; transition: 0.3s; }
@@ -32,7 +32,7 @@
 
 <div id="auth-screen">
     <div class="text-center">
-        <h1 class="text-6xl font-black mb-2 tracking-tighter text-transparent bg-clip-text bg-gradient-to-r from-cyan-400 to-purple-500">3D SPACESHIP HUNTING</h1>
+        <h1 class="text-6xl font-black mb-2 tracking-tighter text-transparent bg-clip-text bg-gradient-to-r from-cyan-400 to-purple-500">3D SPACE HUNTING</h1>
 		<h2 class="text-2xl mb-4">MAKE A <span class="text-cyan-400 font-bold">PISTOL GESTURE 🔫</span></h2>
 		<h2 class="text-2xl mb-6">GIƠ TAY HÌNH <span class="text-yellow-400">KHẨU SÚNG 🔫</span> ĐỂ BẮT ĐẦU</h2>
 		<h2 class="text-2xl mb-6">TARGET: <span class="text-yellow-400">9999 PTS</span> IN <span class="text-red-500">5 MINS</span></h2>
@@ -72,7 +72,6 @@ let gameActive = false;
 let ndcPos = new THREE.Vector2();
 let wasPinching = false;
 const targets = [];
-let sirenInterval = null;
 
 const SFX = {
     ctx: null,
@@ -97,6 +96,20 @@ renderer.setSize(window.innerWidth, window.innerHeight);
 document.body.appendChild(renderer.domElement);
 camera.position.z = 5;
 
+// --- STARFIELD EFFECT ---
+const starGeometry = new THREE.BufferGeometry();
+const starMaterial = new THREE.PointsMaterial({ color: 0xffffff, size: 0.05, transparent: true });
+const starVertices = [];
+for (let i = 0; i < 2000; i++) {
+    const x = (Math.random() - 0.5) * 20;
+    const y = (Math.random() - 0.5) * 20;
+    const z = -Math.random() * 10;
+    starVertices.push(x, y, z);
+}
+starGeometry.setAttribute('position', new THREE.Float32BufferAttribute(starVertices, 3));
+const stars = new THREE.Points(starGeometry, starMaterial);
+scene.add(stars);
+
 const crosshair = new THREE.Group();
 crosshair.add(new THREE.Mesh(new THREE.RingGeometry(0.15, 0.18, 32), new THREE.MeshBasicMaterial({color: 0x00ffff})));
 crosshair.add(new THREE.Mesh(new THREE.CircleGeometry(0.02, 16), new THREE.MeshBasicMaterial({color: 0x00ffff})));
@@ -111,105 +124,53 @@ scene.add(laser);
 const raycaster = new THREE.Raycaster();
 
 function spawnTarget(isBird = false) {
-
     if(!gameActive) return;
-
     let ship = new THREE.Group();
     let col;
-
     if (isBird) {
-
-        
         col = 0xff6666;
         const mat = new THREE.MeshStandardMaterial({ color: col, emissive: col, wireframe: true });
-
-        const body = new THREE.Mesh(
-            new THREE.CylinderGeometry(0.15, 0.3, 1.2, 8),
-            mat
-        );
-
-        const wings = new THREE.Mesh(
-            new THREE.BoxGeometry(1, 0.05, 0.3),
-            mat
-        );
-
-        const nose = new THREE.Mesh(
-            new THREE.ConeGeometry(0.15, 0.5, 6),
-            mat
-        );
-
+        const body = new THREE.Mesh(new THREE.CylinderGeometry(0.15, 0.3, 1.2, 8), mat);
+        const wings = new THREE.Mesh(new THREE.BoxGeometry(1, 0.05, 0.3), mat);
+        const nose = new THREE.Mesh(new THREE.ConeGeometry(0.15, 0.5, 6), mat);
         body.rotation.x = Math.PI / 2;
         nose.position.y = 0.8;
-
-        ship.add(body);
-        ship.add(wings);
-        ship.add(nose);
-
+        ship.add(body); ship.add(wings); ship.add(nose);
     } else {
-
         const colors = [0x66ffff, 0xff66ff, 0xffff66, 0x66ff66];
         col = colors[Math.floor(Math.random() * colors.length)];
-
         const mat = new THREE.MeshStandardMaterial({ color: col, emissive: col, wireframe: true });
-
         const type = Math.floor(Math.random() * 3);
-
         if(type === 0){
-            // UFO
             const base = new THREE.Mesh(new THREE.CylinderGeometry(0.7,0.7,0.15,16), mat);
             const dome = new THREE.Mesh(new THREE.SphereGeometry(0.35,12,12), mat);
-
             dome.position.y = 0.2;
-
-            ship.add(base);
-            ship.add(dome);
+            ship.add(base); ship.add(dome);
         }
-
         if(type === 1){
-            // Rocket
             const body = new THREE.Mesh(new THREE.CylinderGeometry(0.25,0.35,1.2,10), mat);
             const tip = new THREE.Mesh(new THREE.ConeGeometry(0.25,0.5,10), mat);
-
             tip.position.y = 0.85;
-
             const wingL = new THREE.Mesh(new THREE.BoxGeometry(0.1,0.4,0.5), mat);
             wingL.position.x = -0.35;
-
             const wingR = wingL.clone();
             wingR.position.x = 0.35;
-
-            ship.add(body);
-            ship.add(tip);
-            ship.add(wingL);
-            ship.add(wingR);
+            ship.add(body); ship.add(tip); ship.add(wingL); ship.add(wingR);
         }
-
         if(type === 2){
-            // Star fighter
             const core = new THREE.Mesh(new THREE.OctahedronGeometry(0.35), mat);
-
             const wing1 = new THREE.Mesh(new THREE.BoxGeometry(1.2,0.05,0.25), mat);
             const wing2 = new THREE.Mesh(new THREE.BoxGeometry(0.25,0.05,1.2), mat);
-
-            ship.add(core);
-            ship.add(wing1);
-            ship.add(wing2);
+            ship.add(core); ship.add(wing1); ship.add(wing2);
         }
     }
-
-    // Spawn anywhere randomly
     let x = (Math.random() - 0.5) * 14;
     let y = (Math.random() - 0.5) * 10;
-
     ship.position.set(x, y, -5);
-
-    // Random movement direction
     const angle = Math.random() * Math.PI * 2;
     const speed = 0.08 + Math.random() * 0.08;
-
     const driftX = Math.cos(angle) * speed;
     const driftY = Math.sin(angle) * speed;
-
     targets.push({
         mesh: ship,
         vel: new THREE.Vector3(driftX, driftY, 0),
@@ -217,7 +178,6 @@ function spawnTarget(isBird = false) {
         isBird: isBird,
         flapPhase: Math.random() * Math.PI * 2
     });
-
     scene.add(ship);
 }
 
@@ -271,6 +231,7 @@ function executeShot() {
         for (const t of targets) {
             const screenPos = t.mesh.position.clone().project(camera);
             const dist = ndcPos.distanceTo(new THREE.Vector2(screenPos.x, screenPos.y));
+            // HITBOX SIÊU DỄ 0.45
             if (dist < 0.45) { hitTarget = t; break; }
         }
     }
@@ -299,7 +260,6 @@ function updateTimer() {
     const secs = timeLeft % 60;
     const display = document.getElementById('timer');
     display.innerText = `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
-    
     if(timeLeft === 10) startDynamicSiren();
     if(timeLeft <= 0) endGame(score >= 9999);
 }
@@ -308,16 +268,11 @@ function startDynamicSiren() {
     const overlay = document.getElementById('panic-overlay');
     overlay.classList.add('panic-active');
     document.getElementById('timer-label').innerText = "CRITICAL ALERT";
-
     const sirenTick = () => {
         if(!gameActive || timeLeft <= 0) return;
-        
-        // Calculate speed based on time left (from 1s intervals to 0.15s intervals)
         const speed = Math.max(0.15, timeLeft / 10);
         document.documentElement.style.setProperty('--pulse-speed', `${speed}s`);
-        
         SFX.play(timeLeft < 3 ? 1200 : 880, 'triangle', speed * 0.8, 0.2);
-        
         setTimeout(sirenTick, speed * 1000);
     };
     sirenTick();
@@ -329,12 +284,10 @@ function endGame(isWin) {
     const screen = document.getElementById('end-screen');
     const msg = document.getElementById('end-msg');
     const final = document.getElementById('final-score');
-    
     screen.style.display = 'flex';
     msg.innerText = isWin ? "YOU WON" : "YOU LOSE";
     msg.style.color = isWin ? "#0f0" : "#f00";
     final.innerText = `FINAL SCORE: ${score}`;
-    
     if(isWin) {
         SFX.play(523.25, 'sine', 0.2); setTimeout(() => SFX.play(659.25, 'sine', 0.2), 200);
     } else {
@@ -367,6 +320,11 @@ document.getElementById('btn-start').onclick = () => {
 function animate() {
     requestAnimationFrame(animate);
     if(!gameActive) return;
+
+    // Blink stars
+    stars.rotation.y += 0.0005;
+    starMaterial.opacity = 0.5 + Math.sin(Date.now() * 0.001) * 0.5;
+
     const birdCount = targets.filter(t => t.isBird).length;
     const shapeCount = targets.length - birdCount;
     if(shapeCount < 8) spawnTarget(false);
