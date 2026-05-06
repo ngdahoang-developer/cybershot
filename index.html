@@ -243,8 +243,8 @@ function executeShot() {
             createFloatingText(ndcPos.x, ndcPos.y, "-200", "#ff2200");
         } else {
             SFX.play(200, 'square', 0.12); 
-            score += 100;
-            createFloatingText(ndcPos.x, ndcPos.y, "+100", "#00ffff");
+            score += 50;
+            createFloatingText(ndcPos.x, ndcPos.y, "+50", "#00ffff");
         }
         document.getElementById('score').innerText = score.toString().padStart(4, '0');
         scene.remove(hitTarget.mesh);
