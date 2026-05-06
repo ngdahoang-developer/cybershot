@@ -239,8 +239,8 @@ function executeShot() {
     if (hitTarget) {
         if(hitTarget.isBird) {
             SFX.play(80, 'sawtooth', 0.5);
-            score -= 300;
-            createFloatingText(ndcPos.x, ndcPos.y, "-300", "#ff2200");
+            score -= 400;
+            createFloatingText(ndcPos.x, ndcPos.y, "-400", "#ff2200");
         } else {
             SFX.play(200, 'square', 0.12); 
             score += 200;
